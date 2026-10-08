@@ -8,6 +8,11 @@
     "name": "Hiroki Osame",
     "email": "hiroki.osame@gmail.com"
   },
+  "publishConfig": {
+    "executableFiles": [
+      "./dist-native/mac-location.app/Contents/MacOS/mac-location"
+    ]
+  },
   "files": [
     "dist",
     "dist-native",
