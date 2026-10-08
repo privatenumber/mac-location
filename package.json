@@ -1,7 +1,7 @@
 {
 	"name": "mac-location",
 	"version": "0.0.0-semantic-release",
-	"description": "Get the current location of the Mac from Node.js. Bundled native helper, no API key or network service.",
+	"description": "Get the current location of the Mac from Node.js or CLI",
 	"license": "MIT",
 	"repository": "privatenumber/mac-location",
 	"author": {
