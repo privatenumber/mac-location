@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>mac-location</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.privatenumber.mac-location</string>
+	<key>CFBundleName</key>
+	<string>mac-location</string>
+	<key>CFBundleDisplayName</key>
+	<string>mac-location</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Your location is used to provide the current coordinates.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Your location is used to provide the current coordinates.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Your location is used to provide the current coordinates.</string>
+</dict>
+</plist>

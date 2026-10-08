@@ -1,0 +1,32 @@
+{
+  "name": "mac-location",
+  "version": "0.0.0-semantic-release",
+  "description": "Get the current location of the Mac from Node.js. Bundled native helper, no API key or network service.",
+  "license": "MIT",
+  "repository": "privatenumber/mac-location",
+  "author": {
+    "name": "Hiroki Osame",
+    "email": "hiroki.osame@gmail.com"
+  },
+  "files": [
+    "dist",
+    "dist-native",
+    "src-native",
+    "skills",
+    "docs"
+  ],
+  "type": "module",
+  "bin": {
+    "mac-location": "./dist/cli.mjs"
+  },
+  "exports": {
+    "types": "./dist/index.d.mts",
+    "default": "./dist/index.mjs"
+  },
+  "engines": {
+    "node": ">=22.22.2"
+  },
+  "dependencies": {
+    "cleye": "3.0.0-beta.2"
+  }
+}
