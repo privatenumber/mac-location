@@ -84,6 +84,6 @@ Both benchmarks require a readable helper to record its hash.
 
 ## Publishing
 
-Publish with `npm publish` (or `pnpm dlx semantic-release`, which uses npm). `npm` preserves the helper's executable bit when packing; `pnpm pack` does not, and a package packed with `pnpm` will fail to run the helper.
+Publish with `npm publish` (or `pnpm dlx semantic-release`, which uses npm). For Git branch distribution, use `git-publish`. The `publishConfig.executableFiles` declaration preserves the native helper's executable permission when `pnpm pack` creates the package archive.
 
 Run `pnpm verify-helper` and follow [release validation](notes/mac-location/release-validation.md) against the packaged artifact before publishing.
