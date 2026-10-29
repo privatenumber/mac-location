@@ -12,10 +12,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The package is macOS-only, so there is no Linux cell. macOS 11-13 runner images
+        # The package is macOS-only, so there is no Linux cell. macOS 11-14 runner images
         # are retired, so the advertised floor (11.0) is not covered here. The interactive
         # permission dialog is validated manually.
-        os: [macos-14, macos-15, macos-26]
+        os: [macos-15, macos-26]
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
