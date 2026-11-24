@@ -36,16 +36,35 @@ describe('cli', () => {
 		expect(error.stderr).not.toBe('');
 	});
 
-	test('--timeout cancels through the Node signal and exits with its message', async () => {
+	test('--timeout reaches the helper and a TIMEOUT exits with its message', async () => {
 		if (process.platform !== 'darwin') {
 			skip('Requires macOS');
 		}
-		await using fixture = await createLocationFixture('setInterval(() => {}, 1000);');
+		await using fixture = await createLocationFixture(`
+			const timeout = process.argv[process.argv.indexOf('--timeout') + 1];
+			console.log(JSON.stringify({ ok: false, code: 'TIMEOUT', message: 'No location within ' + timeout + ' ms' }));
+		`);
 		await expect(spawn(process.execPath, [fixture.getPath('src/cli.ts'), '--timeout', '100'], {
 			env: { HOME: fixture.getPath('home') },
 		})).rejects.toMatchObject({
 			exitCode: 1,
-			stderr: 'The operation was aborted due to timeout',
+			stderr: 'No location within 100 ms',
+		});
+	});
+
+	test('tells the user to answer the permission prompt while it waits', async () => {
+		if (process.platform !== 'darwin') {
+			skip('Requires macOS');
+		}
+		await using fixture = await createLocationFixture(`
+			console.log('{"event":"permission-request"}');
+			console.log(JSON.stringify({ ok: true, latitude: 1, longitude: 2, accuracy: 3, timestamp: 4 }));
+		`);
+		await expect(spawn(process.execPath, [fixture.getPath('src/cli.ts')], {
+			env: { HOME: fixture.getPath('home') },
+		})).resolves.toMatchObject({
+			stdout: '1,2',
+			stderr: 'Waiting for location permission. Choose Allow in the macOS prompt, or press Ctrl-C to cancel.',
 		});
 	});
 

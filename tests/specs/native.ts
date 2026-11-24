@@ -83,10 +83,17 @@ const exitWithin = async (run: HelperRun, watchdogMs: number): Promise<HelperOut
 	}
 };
 
-/** Parse the helper's single-line JSON stdout, or null when it emitted nothing. */
+const permissionRequestEvent = '{"event":"permission-request"}';
+
+/** Whether the helper reported that it is waiting on the permission prompt. */
+const requestedPermission = (run: HelperRun) => run.stdout.split('\n').includes(permissionRequestEvent);
+
+/** Parse the helper's final JSON response line, or null when it emitted none. */
 const parseResponse = (run: HelperRun): HelperResponse | null => {
-	const line = run.stdout.trim();
-	return line === '' ? null : JSON.parse(line) as HelperResponse;
+	const line = run.stdout
+		.split('\n')
+		.findLast(output => output !== '' && output !== permissionRequestEvent);
+	return line === undefined ? null : JSON.parse(line) as HelperResponse;
 };
 
 /** Whether the helper resolved from Core Location (a position or a location error). */
@@ -112,10 +119,22 @@ const skipUnlessNative = () => {
 };
 
 describe('helper lifetime', () => {
-	test('exits with TIMEOUT at its own deadline', async () => {
+	test('exits with TIMEOUT at its own deadline, which excludes the permission prompt', async () => {
 		skipUnlessNative();
 
 		const run = launchHelper(['--maximum-age', '0', '--timeout', '100']);
+		const exitedEarly = await Promise.race([
+			run.exited.then(() => true),
+			delay(1000).then(() => false),
+		]);
+		if (!exitedEarly) {
+			// Undecided permission: the prompt is open, so the fix deadline has not started.
+			run.child.kill('SIGKILL');
+			await run.exited;
+			expect(requestedPermission(run)).toBe(true);
+			expect(parseResponse(run)).toBeNull();
+			return;
+		}
 		const outcome = await exitWithin(run, 10_000);
 
 		// A killed process means the deadline never fired (lifetime regression).
@@ -164,7 +183,7 @@ describe('helper lifetime', () => {
 
 		// The stdin watch exits 0 without emitting any response.
 		expect(outcome.code).toBe(0);
-		expect(run.stdout).toBe('');
+		expect(parseResponse(run)).toBeNull();
 		expect(Date.now() - closedAt).toBeLessThan(5000);
 	});
 });

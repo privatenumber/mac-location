@@ -40,19 +40,46 @@ describe('runHelper', () => {
 		});
 	});
 
-	test('lets the signal own cancellation without a native deadline', async () => {
+	test('forwards the fix timeout to the helper, defaulting to 30 seconds', async () => {
 		await using fixture = await createFakeHelper(`
-			if (process.argv.includes('--timeout')) {
-				console.log(JSON.stringify({ ok: false, code: 'TIMEOUT', message: 'Unexpected native deadline' }));
-			} else {
-				${printJsonScript(successPosition)}
-			}
+			const index = process.argv.indexOf('--timeout');
+			const timeout = index === -1 ? null : Number(process.argv[index + 1]);
+			console.log(JSON.stringify({ ok: true, latitude: 1, longitude: 2, accuracy: 3, timestamp: timeout }));
 		`);
-		await expect(runHelper(fixture.getPath('helper'), {
-			signal: AbortSignal.timeout(10_000),
-		})).resolves.toMatchObject({
-			timestamp: successPosition.timestamp,
+		await expect(runHelper(fixture.getPath('helper'), {})).resolves.toMatchObject({ timestamp: 30_000 });
+		await expect(runHelper(fixture.getPath('helper'), { timeout: 5000 })).resolves.toMatchObject({ timestamp: 5000 });
+	});
+
+	test('reports the permission request before the response and excludes it from decoding', async () => {
+		// The event arrives while the helper still waits, so it must be dispatched as a stream.
+		await using fixture = await createFakeHelper(`
+			console.log('{"event":"permission-request"}');
+			process.stdin.once('data', () => {
+				${printJsonScript(successPosition)}
+				process.exit();
+			});
+		`);
+		const child = spawn(fixture.getPath('helper'), [], { stdio: ['pipe', 'pipe', 'pipe'] });
+		const { stdout } = await collectHelperResult(child, undefined, {
+			onPermissionRequest: () => child.stdin.write('answered\n'),
 		});
+		expect(JSON.parse(stdout)).toStrictEqual(successPosition);
+	});
+
+	test('rejects with the listener error unchanged and stops the helper', async () => {
+		await using fixture = await createFakeHelper(`
+			console.log('{"event":"permission-request"}');
+			setInterval(() => {}, 1000);
+		`);
+		const child = spawn(fixture.getPath('helper'), [], { stdio: ['pipe', 'pipe', 'pipe'] });
+		const exited = once(child, 'exit');
+		const failure = new Error('listener failed');
+		await expect(collectHelperResult(child, undefined, {
+			onPermissionRequest: () => {
+				throw failure;
+			},
+		})).rejects.toBe(failure);
+		await exited;
 	});
 
 	test('rejects with HELPER_NOT_FOUND when the executable is missing', async () => {

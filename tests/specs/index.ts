@@ -42,6 +42,12 @@ describe('Node API', () => {
 		await expect(getCurrentPosition({ maximumAge: Number.NaN })).rejects.toThrow(TypeError);
 	});
 
+	test('rejects with TypeError on an invalid timeout', async () => {
+		for (const timeout of [0, -1, 1.5, Number.NaN, 2_147_483_648]) {
+			await expect(getCurrentPosition({ timeout })).rejects.toThrow(TypeError);
+		}
+	});
+
 	test('rejects with AbortError on a pre-aborted signal', async () => {
 		if (process.platform !== 'darwin') {
 			skip('Requires macOS');
@@ -51,50 +57,30 @@ describe('Node API', () => {
 		await expect(getCurrentPosition({ signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
 	});
 
-	for (const suppliedSignal of [false, true]) {
-		test(`${suppliedSignal ? 'caller signal replaces' : 'omitted signal uses'} the default location deadline`, async () => {
-			if (process.platform !== 'darwin') {
-				skip('Requires macOS');
-			}
-			await using fixture = await createLocationFixture(`
-				setTimeout(() => console.log(JSON.stringify({
-					ok: true, latitude: 1, longitude: 2, accuracy: 3, timestamp: 4,
-				})), 150);
-			`);
-			// Accelerate only the default deadline in this isolated process. A supplied signal
-			// must let the delayed fixture succeed; a hidden competing deadline would cancel it.
-			const { stdout } = await spawnProcess(process.execPath, ['--input-type=module', '-e', `
-				const timeout = AbortSignal.timeout;
-				let defaultSignal;
-				AbortSignal.timeout = (milliseconds) => {
-					if (milliseconds !== 30000) throw new Error('Unexpected default deadline');
-					defaultSignal = timeout(20);
-					return defaultSignal;
-				};
-				const { getCurrentPosition } = await import(${JSON.stringify(pathToFileURL(fixture.getPath('src/index.ts')).href)});
-				const controller = new AbortController();
-				try {
-					const position = await getCurrentPosition(${suppliedSignal ? '{ signal: controller.signal }' : ''});
-					console.log(JSON.stringify({ position }));
-				} catch (error) {
-					console.log(JSON.stringify({ name: error.name, sameReason: error === defaultSignal?.reason }));
-				}
-			`], { env: { HOME: fixture.getPath('home') } });
-			expect(JSON.parse(stdout)).toStrictEqual(suppliedSignal
-				? {
-					position: {
-						latitude: 1,
-						longitude: 2,
-						accuracy: 3,
-						timestamp: 4,
-					},
-				}
-				: {
-					name: 'TimeoutError',
-					sameReason: true,
-				});
+	test('adds no request deadline over the helper, which owns the fix timeout', async () => {
+		if (process.platform !== 'darwin') {
+			skip('Requires macOS');
+		}
+		// The delayed fixture stands in for a permission prompt. A hidden Node deadline,
+		// accelerated here to 20 ms, would cancel it.
+		await using fixture = await createLocationFixture(`
+			setTimeout(() => console.log(JSON.stringify({
+				ok: true, latitude: 1, longitude: 2, accuracy: 3, timestamp: 4,
+			})), 150);
+		`);
+		const { stdout } = await spawnProcess(process.execPath, ['--input-type=module', '-e', `
+			const timeout = AbortSignal.timeout;
+			AbortSignal.timeout = () => timeout(20);
+			const { getCurrentPosition } = await import(${JSON.stringify(pathToFileURL(fixture.getPath('src/index.ts')).href)});
+			console.log(JSON.stringify(await getCurrentPosition()));
+		`], { env: { HOME: fixture.getPath('home') } });
+		expect(JSON.parse(stdout)).toStrictEqual({
+			latitude: 1,
+			longitude: 2,
+			accuracy: 3,
+			timestamp: 4,
 		});
-	}
+	});
 
 	for (const operation of ['getCurrentPosition', 'updateMeta']) {
 		for (const suppliedSignal of [false, true]) {

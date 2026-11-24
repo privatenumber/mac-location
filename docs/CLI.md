@@ -26,7 +26,7 @@ macOS identifies the CLI as `mac-location`. Custom names, icons, and metadata up
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--timeout` | number | `30000` | Milliseconds to wait for a location, including the permission prompt. |
+| `--timeout` | number | `30000` | Milliseconds to wait for a location after access is granted. Time on the permission prompt does not count. |
 | `--maximumAge` | number | `0` | Accept a cached location up to this many milliseconds old. `0` requires a new measurement. |
 | `--json` | boolean | off | Print the full object instead of `latitude,longitude`. |
 
@@ -38,6 +38,8 @@ macOS identifies the CLI as `mac-location`. Custom names, icons, and metadata up
 - Success: prints the location to stdout and exits `0`.
 - Failure: prints the error message to stderr and exits `1`.
 
-If the timeout expires, the CLI prints `The operation was aborted due to timeout` and exits `1` after helper cleanup.
+While the macOS permission prompt waits for an answer, the CLI prints `Waiting for location permission. Choose Allow in the macOS prompt, or press Ctrl-C to cancel.` to stderr and keeps waiting.
+
+If access was granted but no location arrives within `--timeout`, the CLI prints `No location within <timeout> ms after location access was granted` and exits `1`.
 
 Use `mac-location --help` for the built-in usage text.
