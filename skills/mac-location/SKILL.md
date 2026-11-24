@@ -23,8 +23,9 @@ mac-location --timeout 10000 --maximumAge 60000 --json
 
 ```ts
 await getCurrentPosition({
-	signal: AbortSignal.timeout(10_000), // includes preparation and the permission prompt
-	maximumAge: 60_000 // accept a cached location up to 60 seconds old; default 0 requires a new measurement
+	timeout: 10_000, // wait for a location after access is granted; the permission prompt does not count
+	maximumAge: 60_000, // accept a cached location up to 60 seconds old; default 0 requires a new measurement
+	onPermissionRequest: () => console.error('Choose Allow in the macOS location prompt.')
 })
 ```
 
@@ -37,10 +38,11 @@ controller.abort() // rejects with the signal's reason (AbortError by default)
 await pending
 ```
 
-- Without a signal, requests and metadata updates use a 30-second timeout signal.
-- Pass a signal to replace the default deadline.
+- `timeout` (default 30 seconds) rejects with `LocationError` code `TIMEOUT` only after access was granted.
+- An unanswered permission prompt waits until a `signal` aborts. Pass `signal: AbortSignal.timeout(ms)` to limit the whole request.
 - Cancellation rejects with `signal.reason`; timeout signals use `TimeoutError`.
-- Use `signal` in Node.js and `--timeout` in the CLI. Press Ctrl-C to cancel the CLI.
+- Without a signal, metadata updates stop after 30 seconds.
+- The CLI's `--timeout` is the same as `timeout`. The CLI prints a hint while the prompt waits. Press Ctrl-C to cancel.
 
 ## Show your application's name
 

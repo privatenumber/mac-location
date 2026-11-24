@@ -5,11 +5,15 @@ import Darwin
 // Print a single JSON object to stdout and exit. Writing via FileHandle
 // avoids stdio buffering issues when the process is launched with piped
 // stdout from Node.
-func emit(_ object: [String: Any], exitCode: Int32) -> Never {
+func writeLine(_ object: [String: Any]) {
     if let data = try? JSONSerialization.data(withJSONObject: object, options: []),
        let json = String(data: data, encoding: .utf8) {
         FileHandle.standardOutput.write(Data((json + "\n").utf8))
     }
+}
+
+func emit(_ object: [String: Any], exitCode: Int32) -> Never {
+    writeLine(object)
     exit(exitCode)
 }
 
@@ -18,8 +22,9 @@ func emit(_ object: [String: Any], exitCode: Int32) -> Never {
 // --maximum-age <milliseconds>: accept a fix no older than this. 0 (default)
 // requires a fix obtained after the location request began (i.e. fresh).
 var maximumAge: TimeInterval = 0
-// --timeout <milliseconds>: exit with TIMEOUT after this long. 0 disables the
-// deadline.
+// --timeout <milliseconds>: exit with TIMEOUT if no fix arrives this long after
+// location access is granted. Time spent on the permission prompt does not
+// count, matching the W3C Geolocation `timeout` option. 0 disables the deadline.
 var timeoutMilliseconds: Double = 0
 
 let arguments = CommandLine.arguments
@@ -35,10 +40,13 @@ if let index = arguments.firstIndex(of: "--timeout"), index + 1 < arguments.coun
 final class LocationProvider: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private let maximumAge: TimeInterval
+    private let timeoutMilliseconds: Double
     private var startedAt: Date?
+    private var requestedPermission = false
 
-    init(maximumAge: TimeInterval) {
+    init(maximumAge: TimeInterval, timeoutMilliseconds: Double) {
         self.maximumAge = maximumAge
+        self.timeoutMilliseconds = timeoutMilliseconds
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
@@ -76,10 +84,16 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
     private func handleAuthorization(_ status: CLAuthorizationStatus) {
         switch status {
         case .authorizedAlways, .authorizedWhenInUse:
-            startedAt = Date()
-            manager.startUpdatingLocation()
+            startUpdating()
         case .notDetermined:
-            manager.requestWhenInUseAuthorization()
+            // Report the prompt before waiting on it, so the caller can tell an
+            // unanswered prompt apart from a slow fix. macOS can repeat this
+            // status while the prompt is open; report it once.
+            if !requestedPermission {
+                requestedPermission = true
+                writeLine(["event": "permission-request"])
+                manager.requestWhenInUseAuthorization()
+            }
         case .denied:
             emitDenied()
         case .restricted:
@@ -95,6 +109,24 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
                 "message": "Location permission is unavailable.",
             ], exitCode: 1)
         }
+    }
+
+    private func startUpdating() {
+        // Authorization callbacks can repeat; start the fix and its deadline once.
+        if startedAt != nil {
+            return
+        }
+        startedAt = Date()
+        if timeoutMilliseconds > 0 {
+            Timer.scheduledTimer(withTimeInterval: timeoutMilliseconds / 1000, repeats: false) { _ in
+                emit([
+                    "ok": false,
+                    "code": "TIMEOUT",
+                    "message": "No location within \(Int(self.timeoutMilliseconds.rounded())) ms after location access was granted",
+                ], exitCode: 1)
+            }
+        }
+        manager.startUpdatingLocation()
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
@@ -150,18 +182,6 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
 
 // --- Bounded lifetime ---
 
-// Exit once the deadline passes, so an orphaned helper cannot keep waiting for
-// a location after its caller has given up.
-if timeoutMilliseconds > 0 {
-    Timer.scheduledTimer(withTimeInterval: timeoutMilliseconds / 1000, repeats: false) { _ in
-        emit([
-            "ok": false,
-            "code": "TIMEOUT",
-            "message": "No location within \(Int(timeoutMilliseconds.rounded())) ms",
-        ], exitCode: 1)
-    }
-}
-
 // When stdin is a pipe or socket pair, exit as soon as it closes. The caller
 // holds the write end, so this fires when the caller process goes away — even
 // if it is killed.
@@ -177,6 +197,6 @@ if stdinMode == mode_t(S_IFIFO) || stdinMode == mode_t(S_IFSOCK) {
 
 // --- Entry point ---
 
-let provider = LocationProvider(maximumAge: maximumAge)
+let provider = LocationProvider(maximumAge: maximumAge, timeoutMilliseconds: timeoutMilliseconds)
 provider.start()
 RunLoop.main.run()

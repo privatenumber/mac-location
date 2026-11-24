@@ -14,7 +14,7 @@ const argv = cli({
 	flags: {
 		timeout: {
 			type: Number,
-			description: 'Milliseconds to wait for a location (default 30000)',
+			description: 'Milliseconds to wait for a location after permission is granted (default 30000)',
 		},
 		maximumAge: {
 			type: Number,
@@ -28,13 +28,19 @@ const argv = cli({
 });
 
 try {
-	const timeout = argv.flags.timeout ?? 30_000;
-	if (!Number.isInteger(timeout) || timeout <= 0 || timeout > 2_147_483_647) {
+	const { timeout } = argv.flags;
+	if (
+		timeout !== undefined
+		&& (!Number.isInteger(timeout) || timeout <= 0 || timeout > 2_147_483_647)
+	) {
 		throw new TypeError(`Invalid "--timeout": ${timeout}. Expected a positive integer number of milliseconds (up to 2147483647).`);
 	}
 	const position = await getCurrentPosition({
-		signal: AbortSignal.timeout(timeout),
+		timeout,
 		maximumAge: argv.flags.maximumAge,
+		onPermissionRequest: () => {
+			console.error('Waiting for location permission. Choose Allow in the macOS prompt, or press Ctrl-C to cancel.');
+		},
 	});
 
 	if (argv.flags.json) {

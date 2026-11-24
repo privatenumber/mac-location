@@ -53,9 +53,31 @@ Historical rationale: reclaiming lock files by renaming them can move a live suc
 
 ## Cancellation and lifetime
 
-The standalone request and both application methods use the caller's signal directly, or create a default 30-second timeout signal if it is omitted. Requests pass that same signal through lock waiting, preparation, and helper execution. Cancellation rejects with its original reason, including a timeout signal's `TimeoutError`.
+Requests separate two limits:
 
-Node owns helper cancellation and retains SIGTERM-to-SIGKILL escalation. It omits the native helper's `--timeout`, which remains available for direct invocation and native lifetime tests. The native stdin-EOF watcher handles parent-process death.
+- `timeout` (default 30 seconds) limits the wait for a fix after access is granted. The helper owns it through `--timeout`, because only the helper knows when authorization changes. Expiry returns `TIMEOUT`.
+- `signal` is optional and has no default for location requests. It covers lock waiting, preparation, and helper execution, including the permission prompt. Cancellation rejects with its original reason.
+
+Without a signal, preparation for a request uses a 30-second timeout signal. `app.updateMeta()` keeps its 30-second default signal, because it never waits on a person.
+
+When the status is `.notDetermined`, the helper prints the progress line `{"event":"permission-request"}` once and then requests authorization. Node dispatches it to `onPermissionRequest` while the helper runs, and decodes only the remaining output as the response.
+
+Node owns helper cancellation and retains SIGTERM-to-SIGKILL escalation. The native stdin-EOF watcher handles parent-process death.
+
+### Decision: the fix deadline excludes the permission prompt
+
+Context: [issue #1](https://github.com/privatenumber/mac-location/issues/1). In v1.0.0, a default 30-second signal covered the prompt. An unanswered prompt and a slow fix both rejected with the same `TimeoutError`, so a caller could not give one exact instruction. In the reported case, the first fix after Allow took 36 seconds on macOS 27.0.1.
+
+Decision: follow the [W3C Geolocation `timeout` member](https://www.w3.org/TR/geolocation/#timeout-attribute), which says the time to obtain permission "is not included in the period covered by the timeout member". The `TIMEOUT` code now means "access granted, no fix in time". `onPermissionRequest` reports the prompt while it is open, so a CLI can tell the user to answer it.
+
+Rejected alternatives:
+
+- Reject with a new `PERMISSION_NOT_DETERMINED` code when the signal aborts during the prompt. This replaces the caller's `signal.reason`, which breaks the AbortSignal convention that the library documents. It also keeps the prompt inside the fix budget, so a quick Allow followed by a slow fix still fails.
+- Keep the single signal and only document the behavior. This leaves the ambiguity in place.
+
+Trade-off: with no signal, an unanswered prompt waits without a limit, the same as browsers. Callers that need a total limit pass a signal. Reconsider if unattended callers report hangs as a common problem.
+
+Unknown: whether macOS withdraws an open prompt when the helper is killed, and whether the next request shows it again. This is not measured.
 
 Preparation checks cancellation before bundle publication. A publication already in progress may finish, and a published bundle may remain reusable, but a canceled request does not launch the helper or adopt changed metadata. Cleanup removes staging state and releases the lock.
 

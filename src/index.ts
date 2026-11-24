@@ -42,9 +42,20 @@ const requireSupported = () => {
 	}
 };
 
-const DEFAULT_TIMEOUT = 30_000;
+/** Deadline for metadata preparation, which never waits on a person. */
+const DEFAULT_PREPARATION_TIMEOUT = 30_000;
 
 const validateOptions = (options: GetPositionOptions) => {
+	if (
+		options.timeout !== undefined
+		&& (
+			!Number.isInteger(options.timeout)
+			|| options.timeout <= 0
+			|| options.timeout > 2_147_483_647
+		)
+	) {
+		throw new TypeError(`Invalid "timeout": ${options.timeout}. Expected a positive integer number of milliseconds (up to 2147483647).`);
+	}
 	if (
 		options.maximumAge !== undefined
 		&& (!Number.isFinite(options.maximumAge) || options.maximumAge < 0)
@@ -77,22 +88,25 @@ const requestPosition = async (
 	validateOptions(options);
 	requireSupported();
 
-	const { maximumAge } = options;
-	const signal = options.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT);
-	signal.throwIfAborted();
+	const {
+		maximumAge, timeout, signal, onPermissionRequest,
+	} = options;
+	signal?.throwIfAborted();
 	const executablePath = application === undefined
 		? helperExecutablePath
 		: await resolveApplicationExecutable(application, {
 			sourceBundle: helperBundlePath,
-			signal,
+			signal: signal ?? AbortSignal.timeout(DEFAULT_PREPARATION_TIMEOUT),
 		});
 
 	// A completed preparation can remain reusable, but cancellation must prevent launch.
-	signal.throwIfAborted();
+	signal?.throwIfAborted();
 
 	return runHelper(executablePath, {
 		maximumAge,
+		timeout,
 		signal,
+		onPermissionRequest,
 	});
 };
 
@@ -127,7 +141,7 @@ export const createApplication = (application: ApplicationIdentity): Application
 			const { name, locationUsageDescription } = metadata;
 			const icon = copyIcon(metadata.icon);
 			requireSupported();
-			const signal = options.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT);
+			const signal = options.signal ?? AbortSignal.timeout(DEFAULT_PREPARATION_TIMEOUT);
 			signal.throwIfAborted();
 			const previous = pendingUpdate;
 			const completed = Promise.withResolvers<void>();

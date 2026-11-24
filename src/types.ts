@@ -39,8 +39,17 @@ export type GetPositionOptions = {
 	/** Accept a cached location no older than this many milliseconds. Default: 0 (fresh only). */
 	maximumAge?: number;
 
-	/** Cancel with this signal's reason. When omitted, a 30-second timeout signal is used. */
+	/**
+	 * Milliseconds to wait for a location after location access is granted. Time spent on the
+	 * permission prompt does not count. Expiry rejects with `TIMEOUT`. Default: 30000.
+	 */
+	timeout?: number;
+
+	/** Cancel the whole request, including the permission prompt, with this signal's reason. */
 	signal?: AbortSignal;
+
+	/** Called when macOS is asked to show the location permission prompt. */
+	onPermissionRequest?: () => void;
 
 };
 

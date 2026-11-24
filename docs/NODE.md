@@ -29,9 +29,11 @@ console.log(position)
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `maximumAge` | `number` | `0` | Accept a cached location up to this many milliseconds old. `0` requires a new measurement. |
-| `signal` | `AbortSignal` | `AbortSignal.timeout(30_000)` | Control cancellation and the request deadline. |
+| `timeout` | `number` | `30000` | Milliseconds to wait for a location after access is granted. Time on the permission prompt does not count. |
+| `signal` | `AbortSignal` | none | Cancel the whole request, including the permission prompt. |
+| `onPermissionRequest` | `() => void` | none | Called when macOS is asked to show the permission prompt. |
 
-`maximumAge` must be finite and non-negative. Invalid values reject with `TypeError`.
+`maximumAge` must be finite and non-negative. `timeout` must be an integer from `1` through `2147483647`. Invalid values reject with `TypeError`.
 
 ### Cached locations
 
@@ -49,29 +51,45 @@ console.log(ageMs, measuredAt)
 
 This request can return a location measured 30 seconds ago. With `maximumAge: 0`, the helper requires a measurement taken after the request started.
 
-### Cancellation
+### Timeouts and the permission prompt
 
-Pass `signal` to set a deadline or cancel a request:
+The first request for an application identity can show the macOS permission prompt. The request waits until the user answers it. The `timeout` deadline starts only after macOS grants access, so it measures how long the location takes. This matches the [`timeout` option of the W3C Geolocation API](https://www.w3.org/TR/geolocation/#timeout-attribute).
+
+- A request rejects with `LocationError` code `TIMEOUT` only when access was granted and no location arrived in time.
+- With no `signal`, a prompt that nobody answers keeps the request waiting. Pass a `signal` to set a limit on the complete request.
+- Use `onPermissionRequest` to tell the user to answer the prompt:
 
 ```ts
 import { getCurrentPosition } from 'mac-location'
 
-// Default: stop after 30 seconds
-await getCurrentPosition()
+await getCurrentPosition({
+    onPermissionRequest: () => console.error('Choose Allow in the macOS location prompt.')
+})
+```
 
-// Custom deadline
-await getCurrentPosition({ signal: AbortSignal.timeout(5000) })
+The library calls `onPermissionRequest` only while the permission is undecided, at most once for each request. If the callback throws, the request stops the helper and rejects with that error.
 
-// Caller-controlled cancellation, with no automatic deadline
+### Cancellation
+
+Pass `signal` to cancel a request, or to limit the total time including the permission prompt:
+
+```ts
+import { getCurrentPosition } from 'mac-location'
+
+// Stop after 60 seconds, whether the prompt is still open or no location arrived
+await getCurrentPosition({ signal: AbortSignal.timeout(60_000) })
+
+// Caller-controlled cancellation
 const controller = new AbortController()
 const pending = getCurrentPosition({ signal: controller.signal })
 controller.abort()
 await pending
 ```
 
-- Without a signal, the library creates a 30-second timeout signal.
-- A supplied signal replaces that default. It covers preparation, lock waiting, and helper execution, including the permission dialog.
+- The signal covers preparation, lock waiting, and helper execution, including the permission prompt.
+- Without a signal, preparation of a [custom application](#createapplicationidentity) still stops after 30 seconds.
 - Cancellation rejects with the exact `signal.reason`, not a `LocationError`. Timeout signals supply a `DOMException` named `TimeoutError`; `controller.abort()` uses `AbortError` unless you pass a custom reason.
+- To learn whether a canceled request was waiting on the prompt, record the `onPermissionRequest` call.
 
 Cancellation stops the helper, using a force-kill if needed. Cleanup can finish after the deadline. The helper also exits when its parent dies and stdin closes.
 
@@ -155,7 +173,7 @@ Returns `Promise<void>`.
 - Pass `name`, `locationUsageDescription`, or `icon` in any combination. Omitted fields stay unchanged; the ID is fixed.
 - Icon bytes are copied when you call the method. Use `icon: null` to remove the custom icon.
 - Pass `{}` to prepare the current configuration.
-- Pass `options.signal` to control [cancellation and the deadline](#cancellation).
+- Pass `options.signal` to control [cancellation](#cancellation). Without it, the update stops after 30 seconds.
 
 Metadata changes take effect only after preparation succeeds. Failed or canceled updates leave the object unchanged. Requests already in progress keep their original configuration. Other application objects are unaffected.
 
@@ -192,8 +210,6 @@ try {
 } catch (error) {
     if (error instanceof LocationError) {
         console.error(error.code, error.message)
-    } else if (error instanceof DOMException && error.name === 'TimeoutError') {
-        console.error('Location request timed out')
     } else {
         throw error
     }
@@ -206,13 +222,12 @@ try {
 | `PERMISSION_RESTRICTED` | Location access is restricted, for example by a management profile. |
 | `LOCATION_SERVICES_DISABLED` | Location Services is off system-wide. |
 | `POSITION_UNAVAILABLE` | Location Services is on, but no location measurement is available. |
+| `TIMEOUT` | Access was granted, but no location arrived within `timeout`. |
 | `UNSUPPORTED_PLATFORM` | Not macOS. |
 | `HELPER_NOT_FOUND` | The bundled helper is missing from the installation. |
 | `HELPER_FAILED` | The helper failed unexpectedly. |
 | `HELPER_PREPARATION_FAILED` | Preparing the customized helper failed. |
 
 For cancellation errors, see [Cancellation](#cancellation). Invalid options reject with `TypeError`.
-
-`LocationErrorCode` also includes the native helper protocol's `TIMEOUT` code for direct helper invocation. Node-managed deadlines reject with `TimeoutError` instead.
 
 The package exports the types `Position`, `GetPositionOptions`, `ApplicationIdentity`, `ApplicationMetadata`, `Application`, and `LocationErrorCode`.
